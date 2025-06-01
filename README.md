@@ -75,6 +75,7 @@ To install the dependencies please follow the next steps:
 - Install the dependencies by the following command:
     ```
     pip install -r requirements.txt
+    git clone 后面几个库，然后安装，mesh需要通过 python setup.py install安装
     ```
 
 ## Getting started

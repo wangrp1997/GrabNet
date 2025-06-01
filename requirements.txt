@@ -1,7 +1,10 @@
-pytorch3d
+ # pytorch3d git clone 仓库 然后   export MAX_JOBS=4  # 限制并行编译的作业数
+# 然后  cd pytorch3d
+# checkout 到v0.7.7 分支
+# 然后  pip install -e .
 tensorboardX
 numpy>=1.16.2
-torch>=1.0.1.post2
+# torch>=1.0.1.post2 下在cu124版本pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124 --trusted-host download.pytorch.org
 torchgeometry>=0.1.2
 pillow
 tqdm
@@ -9,7 +12,7 @@ Ninja
 trimesh
 pyrender
 PyYAML
-git+git://github.com/otaheri/chamfer_distance.git
-git+git://github.com/otaheri/MANO.git
-git+git://github.com/otaheri/bps_torch.git
-git+git://github.com/MPI-IS/mesh.git
+# git+git://github.com/otaheri/chamfer_distance.git  
+# git+git://github.com/otaheri/MANO.git
+# git+git://github.com/otaheri/bps_torch.git
+# git+git://github.com/MPI-IS/mesh.git 安装参考：https://www.cnblogs.com/Alex-aimm/p/17458913.html

@@ -1,0 +1,30 @@
+ # Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 数据集和模型文件
+grabnet/data/GrabNet_dataset/
+grabnet/data/GrabNet_dataset_zip/
+grabnet/models/coarsenet.pt
+grabnet/models/mano_v1_2.zip
+grabnet/models/mano_v1_2/
+grabnet/models/models.zip
+grabnet/models/refinenet.pt
+
+# 日志和输出文件
+logs/
+mesh_view_*.png
+
+# 第三方库
+third_party/
+
+# IDE相关
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
