@@ -1,0 +1,13 @@
+grabnet/__pycache__/
+grabnet/data/grabnet_dataset/
+grabnet/data/zip/
+grabnet/models/__pycache__/
+grabnet/models/coarsenet.pt
+grabnet/models/mano_v1_2.zip
+grabnet/models/mano_v1_2/
+grabnet/models/models.zip
+grabnet/models/refinenet.pt
+grabnet/tests/__pycache__/
+grabnet/tools/__pycache__/
+logs/
+third_party/

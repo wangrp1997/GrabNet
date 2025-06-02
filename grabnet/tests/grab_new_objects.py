@@ -17,76 +17,135 @@ import numpy as np
 import torch
 import os
 import argparse
+import trimesh
 
 import mano
-from psbody.mesh import MeshViewers, Mesh
-from grabnet.tools.meshviewer import Mesh as M
-from grabnet.tools.vis_tools import points_to_spheres
+# from psbody.mesh import MeshViewers, Mesh
+from grabnet.tools.meshviewer import Mesh
+# from grabnet.tools.vis_tools import points_to_spheres
 from grabnet.tools.utils import euler
 from grabnet.tools.cfg_parser import Config
 from grabnet.tests.tester import Tester
 
 from bps_torch.bps import bps_torch
 
-from psbody.mesh.colors import name_to_rgb
+# from psbody.mesh.colors import name_to_rgb
 from grabnet.tools.train_tools import point2point_signed
 from grabnet.tools.utils import aa2rotmat
 from grabnet.tools.utils import makepath
 from grabnet.tools.utils import to_cpu
+from lib.viztools.viz_o3d_utils import VizContext
 
 
 def vis_results(dorig, coarse_net, refine_net, rh_model , save=False, save_dir = None):
-
+    import copy
     with torch.no_grad():
-        imw, imh = 1920, 780
-        cols = len(dorig['bps_object'])
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        mvs = MeshViewers(window_width=imw, window_height=imh, shape=[1, cols], keepalive=True)
+        viz_ctx = VizContext(non_block=True)
+        viz_ctx.init()
 
         drec_cnet = coarse_net.sample_poses(dorig['bps_object'])
         verts_rh_gen_cnet = rh_model(**drec_cnet).vertices
-
         _, h2o, _ = point2point_signed(verts_rh_gen_cnet, dorig['verts_object'].to(device))
-
         drec_cnet['trans_rhand_f'] = drec_cnet['transl']
         drec_cnet['global_orient_rhand_rotmat_f'] = aa2rotmat(drec_cnet['global_orient']).view(-1, 3, 3)
         drec_cnet['fpose_rhand_rotmat_f'] = aa2rotmat(drec_cnet['hand_pose']).view(-1, 15, 3, 3)
         drec_cnet['verts_object'] = dorig['verts_object'].to(device)
         drec_cnet['h2o_dist']= h2o.abs()
-
         drec_rnet = refine_net(**drec_cnet)
         verts_rh_gen_rnet = rh_model(**drec_rnet).vertices
 
+        show_next = False
+        def next_sample(_):
+            nonlocal show_next
+            show_next = True
+
+        viz_ctx.register_key_callback('D', next_sample)
+        print('按D键显示下一个样本')
 
         for cId in range(0, len(dorig['bps_object'])):
+            show_next = False
             try:
-                from copy import deepcopy
-                meshes = deepcopy(dorig['mesh_object'])
+                meshes = copy.deepcopy(dorig['mesh_object'])
                 obj_mesh = meshes[cId]
-            except:
-                obj_mesh = points_to_spheres(to_cpu(dorig['verts_object'][cId]), radius=0.002, vc=name_to_rgb['green'])
+            except Exception:
+                obj_verts = to_cpu(dorig['verts_object'][cId])
+                obj_faces = np.zeros((0, 3), dtype=np.int32)
+                obj_mesh = None
+            else:
+                obj_verts = obj_mesh.vertices
+                obj_faces = obj_mesh.faces
 
-            hand_mesh_gen_cnet = Mesh(v=to_cpu(verts_rh_gen_cnet[cId]), f=rh_model.faces, vc=name_to_rgb['pink'])
-            hand_mesh_gen_rnet = Mesh(v=to_cpu(verts_rh_gen_rnet[cId]), f=rh_model.faces, vc=name_to_rgb['gray'])
-
+            hand_mesh_gen_rnet = to_cpu(verts_rh_gen_rnet[cId])
+            hand_mesh_gen_cnet = to_cpu(verts_rh_gen_cnet[cId])
             if 'rotmat' in dorig:
                 rotmat = dorig['rotmat'][cId].T
-                obj_mesh = obj_mesh.rotate_vertices(rotmat)
-                hand_mesh_gen_cnet.rotate_vertices(rotmat)
-                hand_mesh_gen_rnet.rotate_vertices(rotmat)
+                obj_verts = obj_verts @ rotmat
+                hand_mesh_gen_rnet = hand_mesh_gen_rnet @ rotmat
+                hand_mesh_gen_cnet = hand_mesh_gen_cnet @ rotmat
 
-            hand_mesh_gen_cnet.reset_face_normals()
-            hand_mesh_gen_rnet.reset_face_normals()
+            viz_ctx.update_by_mesh('hand_rnet', hand_mesh_gen_rnet, rh_model.faces, vcolors=[0.7, 0.7, 0.7])
+            viz_ctx.update_by_mesh('hand_cnet', hand_mesh_gen_cnet, rh_model.faces, vcolors=[1.0, 0.4, 0.7])
+            if obj_faces.shape[0] > 0:
+                viz_ctx.update_by_mesh('obj', obj_verts, obj_faces, vcolors=[0.2, 0.8, 0.2])
+            else:
+                viz_ctx.update_by_pc('obj_pc', obj_verts, pcolors=[0.2, 0.8, 0.2])
 
-            # mvs[0][cId].set_static_meshes([hand_mesh_gen_cnet] + obj_mesh, blocking=True)
-            mvs[0][cId].set_static_meshes([hand_mesh_gen_rnet,obj_mesh], blocking=True)
+            while not show_next:
+                viz_ctx.step()
 
             if save:
                 save_path = os.path.join(save_dir, str(cId))
                 makepath(save_path)
-                hand_mesh_gen_rnet.write_ply(filename=save_path + '/rh_mesh_gen_%d.ply' % cId)
-                obj_mesh[0].write_ply(filename=save_path + '/obj_mesh_%d.ply' % cId)
+                # hand mesh
+                hv = hand_mesh_gen_rnet.cpu().numpy() if isinstance(hand_mesh_gen_rnet, torch.Tensor) else hand_mesh_gen_rnet
+                faces = rh_model.faces.cpu().numpy() if isinstance(rh_model.faces, torch.Tensor) else rh_model.faces
+                try:
+                    if hv is None or faces is None:
+                        raise ValueError("顶点或面数据为None")
+                    if not isinstance(hv, np.ndarray) or not isinstance(faces, np.ndarray):
+                        raise ValueError(f"数据类型错误: hv类型={type(hv)}, faces类型={type(faces)}")
+                    if hv.shape[1] != 3 or faces.shape[1] != 3:
+                        raise ValueError(f"数据维度错误: hv.shape={hv.shape}, faces.shape={faces.shape}")
+                    
+                    hv = hv.astype(np.float64)
+                    faces = faces.astype(np.int32)
+                    hand_mesh = trimesh.Trimesh(vertices=hv, faces=faces, process=False)
+                    hand_mesh.export(save_path + '/rh_mesh_gen_%d.ply' % cId)
+                except Exception as e:
+                    print(f'[保存失败] hand_mesh 第{cId}个样本，错误：{e}')
+                    print(f'数据信息: hv.shape={hv.shape if hv is not None else None}, faces.shape={faces.shape if faces is not None else None}')
+                
+                # obj mesh
+                if obj_faces.shape[0] > 0:
+                    ov = obj_verts.cpu().numpy() if isinstance(obj_verts, torch.Tensor) else obj_verts
+                    of = obj_faces.cpu().numpy() if isinstance(obj_faces, torch.Tensor) else obj_faces
+                    try:
+                        if ov is None or of is None:
+                            raise ValueError("顶点或面数据为None")
+                        if not isinstance(ov, np.ndarray) or not isinstance(of, np.ndarray):
+                            raise ValueError(f"数据类型错误: ov类型={type(ov)}, of类型={type(of)}")
+                        if ov.shape[1] != 3 or of.shape[1] != 3:
+                            raise ValueError(f"数据维度错误: ov.shape={ov.shape}, of.shape={of.shape}")
+                        
+                        ov = ov.astype(np.float64)
+                        of = of.astype(np.int32)
+                        obj_mesh = trimesh.Trimesh(vertices=ov, faces=of, process=False)
+                        obj_mesh.export(save_path + '/obj_mesh_%d.ply' % cId)
+                    except Exception as e:
+                        print(f'[保存失败] obj_mesh 第{cId}个样本，错误：{e}')
+                        print(f'数据信息: ov.shape={ov.shape if ov is not None else None}, of.shape={of.shape if of is not None else None}')
+                else:
+                    try:
+                        if obj_verts is None:
+                            raise ValueError("点云数据为None")
+                        if not isinstance(obj_verts, np.ndarray):
+                            obj_verts = obj_verts.cpu().numpy() if isinstance(obj_verts, torch.Tensor) else obj_verts
+                        np.save(os.path.join(save_path, f'obj_pc_{cId}.npy'), obj_verts)
+                    except Exception as e:
+                        print(f'[保存失败] obj_pc 第{cId}个样本，错误：{e}')
+                        print(f'数据信息: obj_verts.shape={obj_verts.shape if obj_verts is not None else None}')
+        viz_ctx.deinit()
 
 
 def grab_new_objs(grabnet, objs_path, rot=True, n_samples=10, scale=1.):
@@ -138,6 +197,7 @@ def grab_new_objs(grabnet, objs_path, rot=True, n_samples=10, scale=1.):
         dorig['verts_object'] = torch.cat(dorig['verts_object'])
 
         save_dir = os.path.join(grabnet.cfg.work_dir, 'grab_new_objects')
+        print(save_dir)
         grabnet.logger(f'#################\n'
                               f'                   \n'
                               f'Showing results for the {obj_name.upper()}'
@@ -147,47 +207,35 @@ def grab_new_objs(grabnet, objs_path, rot=True, n_samples=10, scale=1.):
                     coarse_net=grabnet.coarse_net,
                     refine_net=grabnet.refine_net,
                     rh_model=rh_model,
-                    save=False,
+                    save=True,
                     save_dir=save_dir
                     )
 
 def load_obj_verts(mesh_path, rand_rotmat, rndrotate=True, scale=1., n_sample_verts=10000):
-
     np.random.seed(100)
     obj_mesh = Mesh(filename=mesh_path, vscale=scale)
-
-    obj_mesh.reset_normals()
-    obj_mesh.vc = obj_mesh.colors_like('green')
-
-    ## center and scale the object
-    max_length = np.linalg.norm(obj_mesh.v, axis=1).max()
+    max_length = np.linalg.norm(obj_mesh.vertices, axis=1).max()
     if  max_length > .3:
         re_scale = max_length/.08
         print(f'The object is very large, down-scaling by {re_scale} factor')
-        obj_mesh.v = obj_mesh.v/re_scale
-
-    object_fullpts = obj_mesh.v
+        obj_mesh.vertices = obj_mesh.vertices/re_scale
+    object_fullpts = obj_mesh.vertices
     maximum = object_fullpts.max(0, keepdims=True)
     minimum = object_fullpts.min(0, keepdims=True)
-
     offset = ( maximum + minimum) / 2
     verts_obj = object_fullpts - offset
-    obj_mesh.v = verts_obj
-
+    obj_mesh.vertices = verts_obj
     if rndrotate:
         obj_mesh.rotate_vertices(rand_rotmat)
     else:
         rand_rotmat = np.eye(3)
-
-    while (obj_mesh.v.shape[0] < n_sample_verts):
-        mesh = M(vertices=obj_mesh.v, faces = obj_mesh.f)
+    while (obj_mesh.vertices.shape[0] < n_sample_verts):
+        mesh = Mesh(vertices=obj_mesh.vertices, faces=obj_mesh.faces)
         mesh = mesh.subdivide()
-        obj_mesh = Mesh(v=mesh.vertices, f = mesh.faces, vc=name_to_rgb['green'])
-
-    verts_obj = obj_mesh.v
+        obj_mesh = Mesh(v=mesh.vertices, f=mesh.faces)
+    verts_obj = obj_mesh.vertices
     verts_sample_id = np.random.choice(verts_obj.shape[0], n_sample_verts, replace=False)
     verts_sampled = verts_obj[verts_sample_id]
-
     return verts_sampled, obj_mesh, rand_rotmat
 
 if __name__ == '__main__':
