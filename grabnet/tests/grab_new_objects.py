@@ -54,6 +54,10 @@ def vis_results(dorig, coarse_net, refine_net, rh_model , save=False, save_dir =
         drec_cnet['h2o_dist']= h2o.abs()
         drec_rnet = refine_net(**drec_cnet)
         verts_rh_gen_rnet = rh_model(**drec_rnet).vertices
+        keypoints_rh_gen_rnet = rh_model(**drec_rnet, return_tips=True).joints
+        print(keypoints_rh_gen_rnet.shape)
+        print(drec_rnet['transl'])
+        print(drec_rnet['global_orient'])
 
         show_next = False
         def next_sample(_):

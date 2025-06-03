@@ -11,3 +11,8 @@ grabnet/tests/__pycache__/
 grabnet/tools/__pycache__/
 logs/
 third_party/
+eval/
+grabnet/data/__pycache__/
+grabnet/train/__pycache__/
+model/
+tests/
