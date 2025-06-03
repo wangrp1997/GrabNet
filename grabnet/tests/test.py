@@ -94,7 +94,7 @@ def inference(grabnet):
     grabnet.refine_net.eval()
 
     ds_name = 'test'
-    mesh_base = '/home/rw/Projects/GrabNet/grabnet/data/grabnet_dataset/tools/object_meshes/contact_meshes'
+    mesh_base = os.path.expanduser('~/Projects/GrabNet/grabnet/data/grabnet_dataset/tools/object_meshes/contact_meshes')
     ds_test = LoadData(dataset_dir=grabnet.cfg.dataset_dir, ds_name=ds_name)
     n_samples = 5
 
